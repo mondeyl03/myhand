@@ -3,50 +3,58 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Control Mano Robótica</title>
+<title>Exoesqueleto de los Timbritos</title>
 <style>
 body{font-family:Arial;background:#0d1117;color:#e6eef6;text-align:center;margin:0;padding:0;}
 h1{background:#06b6d4;color:#0d1117;padding:10px;margin:0;}
 .container{margin:20px auto;max-width:400px;background:#161b22;padding:20px;border-radius:10px;}
-.finger{margin:15px 0;padding:10px;border:1px solid #06b6d4;border-radius:8px;}
-.finger label{font-weight:bold;display:block;margin-bottom:5px;}
-input[type=range]{width:100%;}
-.value{font-size:0.9em;color:#94a3b8;}
+.finger{margin:15px 0;padding:10px;border:1px solid #06b6d4;border-radius:8px;display:flex;align-items:center;justify-content:space-between;}
+.finger label{font-weight:bold;display:block;margin-bottom:5px;flex:1;}
+input[type=range]{width:70%;}
+.value{font-size:0.9em;color:#94a3b8;margin-left:10px;}
 .btn{margin:8px;padding:10px 15px;background:#06b6d4;border:none;color:#0d1117;border-radius:8px;cursor:pointer;font-weight:bold;}
 .btn.secondary{background:transparent;border:1px solid #06b6d4;color:#06b6d4;}
+.arrow-btn{margin-left:5px;margin-right:5px;padding:4px 8px;font-weight:bold;border-radius:5px;border:none;background:#06b6d4;color:#0d1117;cursor:pointer;}
 </style>
 </head>
 <body>
 <h1>Control Mano Robótica</h1>
 <div class="container" id="sliders"></div>
 <div>
-  <button class="btn" onclick="setAll(90)">Abrir Mano</button>
-  <button class="btn" onclick="setAll(0)">Cerrar Mano</button>
+  <button class="btn" onclick="slowVoiceOpen()">Abrir Mano</button>
+  <button class="btn" onclick="slowVoiceClose()">Cerrar Mano</button>
   <button class="btn secondary" onclick="resetAll()">Ajustar inicio</button>
   <button class="btn" id="start">🎤 Voz</button>
 </div>
 <div id="status" style="margin-top:15px;">Presiona "Voz" y di abrir o cerrar</div>
 
 <script>
-const ESP32_IP = "172.19.123.247"; // <-- Cambia aquí por la IP que da tu ESP32
+const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP del ESP32
 const fingerNames=["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions=[90,90,90,90,90];
 const slidersDiv=document.getElementById('sliders');
 const status=document.getElementById('status');
 
-for(let i=0;i<5;i++){
-  const cont=document.createElement('div');
-  cont.className='finger';
-  cont.innerHTML=`<label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
-  <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i},this.value)">`;
-  slidersDiv.appendChild(cont);
-}
-
+/* Función para enviar comando al ESP32 */
 function sendServo(idx,val){
-  if(idx==2||idx==3) val=90-val;
+  if(idx==2||idx==3) val=90-val; // invertir corazon/indice
   fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
+/* Generar sliders + flechas */
+for(let i=0;i<5;i++){
+  const cont=document.createElement('div');
+  cont.className='finger';
+  cont.innerHTML=`
+    <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
+    <button class="arrow-btn" onclick="adjustSlider(${i},-1)">◀</button>
+    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i},this.value)">
+    <button class="arrow-btn" onclick="adjustSlider(${i},1)">▶</button>
+  `;
+  slidersDiv.appendChild(cont);
+}
+
+/* Slider input */
 function onSliderInput(idx,val){
   val=parseInt(val);
   positions[idx]=val;
@@ -54,6 +62,18 @@ function onSliderInput(idx,val){
   sendServo(idx,val);
 }
 
+/* Ajustar con flechas 1 en 1 */
+function adjustSlider(idx,delta){
+  let val=positions[idx]+delta;
+  if(val<0) val=0;
+  if(val>90) val=90;
+  positions[idx]=val;
+  document.getElementById('s'+idx).value=val;
+  document.getElementById('val'+idx).textContent=val+'°';
+  sendServo(idx,val);
+}
+
+/* Funciones generales */
 function setAll(angle){
   for(let i=0;i<5;i++){
     positions[i]=angle;
@@ -65,6 +85,31 @@ function setAll(angle){
 
 function resetAll(){ setAll(90); }
 
+/* Movimiento de voz lento de 5 en 5 cada 2 segundos */
+function slowVoiceOpen(){
+  status.innerText="Abriendo mano lentamente...";
+  let steps=Array.from({length: Math.ceil((90-positions[0])/5)}, (_,i)=>positions[0]+5*(i+1));
+  moveAllSteps(steps);
+}
+function slowVoiceClose(){
+  status.innerText="Cerrando mano lentamente...";
+  let steps=Array.from({length: Math.ceil(positions[0]/5)}, (_,i)=>positions[0]-5*(i+1));
+  moveAllSteps(steps);
+}
+
+function moveAllSteps(steps){
+  if(steps.length===0) return;
+  let step=steps.shift();
+  for(let i=0;i<5;i++){
+    positions[i]=step;
+    document.getElementById('s'+i).value=step;
+    document.getElementById('val'+i).textContent=step+'°';
+    sendServo(i,step);
+  }
+  setTimeout(()=>moveAllSteps(steps),2000); // cada 2 segundos
+}
+
+/* Control de voz */
 document.getElementById('start').addEventListener('click',()=>{
   if(!('webkitSpeechRecognition' in window)){ status.innerText="Tu navegador no soporta voz"; return;}
   const rec=new webkitSpeechRecognition();
@@ -76,8 +121,8 @@ document.getElementById('start').addEventListener('click',()=>{
   rec.onresult=function(e){
     const cmd=e.results[0][0].transcript.toLowerCase();
     status.innerText="Comando: "+cmd;
-    if(cmd.includes("abrir")) setAll(90);
-    else if(cmd.includes("cerrar")) setAll(0);
+    if(cmd.includes("abrir")) slowVoiceOpen();
+    else if(cmd.includes("cerrar")) slowVoiceClose();
     else status.innerText="Comando no reconocido";
   };
   rec.onerror=function(e){status.innerText="Error: "+e.error;}
