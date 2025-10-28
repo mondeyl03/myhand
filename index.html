@@ -1,91 +1,86 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Control Mano por Voz</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Control Mano Robótica</title>
 <style>
-  body { font-family: sans-serif; background: #111; color: white; text-align: center; padding: 20px; }
-  button { font-size: 20px; padding: 10px 20px; margin: 20px; cursor: pointer; }
-  #status { margin-top: 20px; font-size: 18px; }
+body{font-family:Arial;background:#0d1117;color:#e6eef6;text-align:center;margin:0;padding:0;}
+h1{background:#06b6d4;color:#0d1117;padding:10px;margin:0;}
+.container{margin:20px auto;max-width:400px;background:#161b22;padding:20px;border-radius:10px;}
+.finger{margin:15px 0;padding:10px;border:1px solid #06b6d4;border-radius:8px;}
+.finger label{font-weight:bold;display:block;margin-bottom:5px;}
+input[type=range]{width:100%;}
+.value{font-size:0.9em;color:#94a3b8;}
+.btn{margin:8px;padding:10px 15px;background:#06b6d4;border:none;color:#0d1117;border-radius:8px;cursor:pointer;font-weight:bold;}
+.btn.secondary{background:transparent;border:1px solid #06b6d4;color:#06b6d4;}
 </style>
 </head>
 <body>
-<h1>Control de Mano Robótica por Voz</h1>
-<button id="start">🎤 Hablar</button>
-<div id="status">Presiona "Hablar" y di: abrir, cerrar o mover el pulgar a 90 grados</div>
+<h1>Control Mano Robótica</h1>
+<div class="container" id="sliders"></div>
+<div>
+  <button class="btn" onclick="setAll(90)">Abrir Mano</button>
+  <button class="btn" onclick="setAll(0)">Cerrar Mano</button>
+  <button class="btn secondary" onclick="resetAll()">Ajustar inicio</button>
+  <button class="btn" id="start">🎤 Voz</button>
+</div>
+<div id="status" style="margin-top:15px;">Presiona "Voz" y di abrir o cerrar</div>
 
 <script>
-const esp32IP = "192.168.4.1"; // Cambia por la IP de tu ESP32
-const status = document.getElementById("status");
-const btn = document.getElementById("start");
+const ESP32_IP = "172.19.123.247"; // <-- Cambia aquí por la IP que da tu ESP32
+const fingerNames=["Meñique","Anular","Corazón","Índice","Pulgar"];
+let positions=[90,90,90,90,90];
+const slidersDiv=document.getElementById('sliders');
+const status=document.getElementById('status');
 
-// Mapear nombre de dedo -> número de servo
-const dedosMap = {
-  "pulgar": 4,
-  "indice": 3,
-  "medio": 2,
-  "corazon": 2, // opcional
-  "anular": 1,
-  "menique": 0,
-  "meñique": 0
-};
-
-function enviarComando(url){
-  fetch(`http://${esp32IP}${url}`)
-    .then(r => r.text())
-    .then(txt => status.innerText = "ESP32 respondió: " + txt)
-    .catch(err => status.innerText = "Error: " + err);
+for(let i=0;i<5;i++){
+  const cont=document.createElement('div');
+  cont.className='finger';
+  cont.innerHTML=`<label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
+  <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i},this.value)">`;
+  slidersDiv.appendChild(cont);
 }
 
-btn.addEventListener("click", ()=>{
-  if(!('webkitSpeechRecognition' in window)){
-    status.innerText = "Tu navegador no soporta reconocimiento de voz.";
-    return;
+function sendServo(idx,val){
+  if(idx==2||idx==3) val=90-val;
+  fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
+}
+
+function onSliderInput(idx,val){
+  val=parseInt(val);
+  positions[idx]=val;
+  document.getElementById('val'+idx).textContent=val+'°';
+  sendServo(idx,val);
+}
+
+function setAll(angle){
+  for(let i=0;i<5;i++){
+    positions[i]=angle;
+    document.getElementById('s'+i).value=angle;
+    document.getElementById('val'+i).textContent=angle+'°';
+    sendServo(i,angle);
   }
+}
 
-  const recognition = new webkitSpeechRecognition();
-  recognition.lang = "es-ES";
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
+function resetAll(){ setAll(90); }
 
-  recognition.start();
-  status.innerText = "Escuchando...";
-
-  recognition.onresult = function(event){
-    const comando = event.results[0][0].transcript.toLowerCase();
-    status.innerText = "Comando: " + comando;
-
-    // Abrir/cerrar todos
-    if(comando.includes("abrir")){
-      enviarComando("/open");
-      return;
-    }
-    if(comando.includes("cerrar")){
-      enviarComando("/close");
-      return;
-    }
-
-    // Mover dedo por nombre
-    const match = comando.match(/(pulgar|indice|medio|corazon|anular|menique|meñique)\s*(?:a| )\s*(\d{1,3})/);
-    if(match){
-      const dedoNombre = match[1];
-      const valor = parseInt(match[2]);
-      if(valor < 0 || valor > 180){
-        status.innerText = "Ángulo inválido: " + valor;
-        return;
-      }
-      const dedoNum = dedosMap[dedoNombre];
-      enviarComando(`/servo?finger=${dedoNum}&value=${valor}`);
-      return;
-    }
-
-    status.innerText = "Comando no reconocido";
-  }
-
-  recognition.onerror = function(event){
-    status.innerText = "Error de reconocimiento: " + event.error;
-  }
+document.getElementById('start').addEventListener('click',()=>{
+  if(!('webkitSpeechRecognition' in window)){ status.innerText="Tu navegador no soporta voz"; return;}
+  const rec=new webkitSpeechRecognition();
+  rec.lang="es-ES";
+  rec.interimResults=false;
+  rec.maxAlternatives=1;
+  rec.start();
+  status.innerText="Escuchando...";
+  rec.onresult=function(e){
+    const cmd=e.results[0][0].transcript.toLowerCase();
+    status.innerText="Comando: "+cmd;
+    if(cmd.includes("abrir")) setAll(90);
+    else if(cmd.includes("cerrar")) setAll(0);
+    else status.innerText="Comando no reconocido";
+  };
+  rec.onerror=function(e){status.innerText="Error: "+e.error;}
 });
 </script>
 </body>
