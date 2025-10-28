@@ -5,19 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Exoesqueleto de los Timbritos</title>
 <style>
-  body { font-family: Arial, sans-serif; background: #0d1117; color: #e6eef6; text-align: center; margin: 0; padding: 0; }
-  h1 { background: #06b6d4; color: #0d1117; padding: 10px; margin: 0; }
-  .container { margin: 20px auto; max-width: 400px; background: #161b22; padding: 20px; border-radius: 10px; }
-  .finger { margin: 15px 0; padding: 10px; border: 1px solid #06b6d4; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
-  .finger label { font-weight: bold; display: block; margin-bottom: 5px; }
-  input[type=range] { width: 65%; }
-  .value { font-size: 0.9em; color: #94a3b8; width: 35px; display: inline-block; text-align: right; }
-  .btn { margin: 5px; padding: 10px 15px; background: #06b6d4; border: none; color: #0d1117; border-radius: 8px; cursor: pointer; font-weight: bold; }
-  .btn.secondary { background: transparent; border: 1px solid #06b6d4; color: #06b6d4; }
-  .control-buttons { margin-top: 10px; }
-  .mic-button { margin: 10px; padding: 10px; background: #facc15; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; }
-  #commandBox { margin-top:10px; font-size: 1em; color: #facc15; min-height: 20px; }
-  .hook-btn { margin-left: 5px; padding: 5px 8px; font-size: 0.8em; cursor: pointer; border-radius: 5px; border: 1px solid #06b6d4; background: transparent; color: #06b6d4; }
+body { font-family: Arial, sans-serif; background: #0d1117; color: #e6eef6; text-align: center; margin: 0; padding: 0; }
+h1 { background: #06b6d4; color: #0d1117; padding: 10px; margin: 0; }
+.container { margin: 20px auto; max-width: 400px; background: #161b22; padding: 20px; border-radius: 10px; }
+.finger { margin: 15px 0; padding: 10px; border: 1px solid #06b6d4; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
+.finger label { font-weight: bold; display: block; margin-bottom: 5px; width: 60%; text-align: left; }
+input[type=range] { width: 50%; }
+.value { font-size: 0.9em; color: #94a3b8; width: 35px; display: inline-block; text-align: right; }
+.btn { margin: 5px; padding: 10px 15px; background: #06b6d4; border: none; color: #0d1117; border-radius: 8px; cursor: pointer; font-weight: bold; }
+.btn.secondary { background: transparent; border: 1px solid #06b6d4; color: #06b6d4; }
+.control-buttons { margin-top: 10px; }
+.mic-button { margin: 10px; padding: 10px; background: #facc15; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; }
+#commandBox { margin-top:10px; font-size: 1em; color: #facc15; min-height: 20px; }
+.hook-btn, .step-btn { margin-left: 5px; padding: 5px 8px; font-size: 0.8em; cursor: pointer; border-radius: 5px; border: 1px solid #06b6d4; background: transparent; color: #06b6d4; }
 </style>
 </head>
 <body>
@@ -27,8 +27,8 @@
 <div class="container" id="sliders"></div>
 
 <div class="control-buttons">
-  <button class="btn" onclick="setAll(90)">Abrir Mano</button>
-  <button class="btn" onclick="setAll(0)">Cerrar Mano</button>
+  <button class="btn" onclick="startAll(90)">Abrir Mano</button>
+  <button class="btn" onclick="startAll(0)">Cerrar Mano</button>
 </div>
 
 <button class="mic-button" onclick="startVoice()">🎤</button>
@@ -38,6 +38,7 @@
 const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions = [90,90,90,90,90];
 let lastSaved = [90,90,90,90,90];
+let intervals = [null,null,null,null,null];  // intervalos de movimiento
 const slidersDiv = document.getElementById('sliders');
 
 for(let i=0;i<5;i++){
@@ -45,9 +46,11 @@ for(let i=0;i<5;i++){
   cont.className = 'finger';
   cont.innerHTML = `
     <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}</span>°</label>
-    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" 
-      oninput="manualMove(${i},this.value)">
+    <button class="step-btn" onclick="stepFinger(${i},-1)">◀</button>
+    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="manualMove(${i},this.value)">
+    <button class="step-btn" onclick="stepFinger(${i},1)">▶</button>
     <button class="hook-btn" onclick="regresarAnterior(${i})">↺</button>
+    <button class="hook-btn" onclick="pauseFinger(${i})">⏸</button>
   `;
   slidersDiv.appendChild(cont);
 }
@@ -59,32 +62,45 @@ function manualMove(idx,val){
   fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-function setAll(angle){
-  for(let i=0;i<5;i++){
-    moveToAngle(i,angle);
-  }
+function stepFinger(idx,direction){
+  pauseFinger(idx);
+  let target = positions[idx] + direction;
+  target = Math.max(0,Math.min(90,target));
+  moveToAngle(idx,target,2000); // 2 segundos por paso de 3° dentro de moveToAngle
+}
+
+function pauseFinger(idx){
+  if(intervals[idx]) clearInterval(intervals[idx]);
+  intervals[idx]=null;
+}
+
+function startAll(angle){
+  for(let i=0;i<5;i++) moveToAngle(i,angle,2000);
 }
 
 function regresarAnterior(idx){
-  moveToAngle(idx,lastSaved[idx]);
+  moveToAngle(idx,lastSaved[idx],2000);
 }
 
-// movimiento gradual en pasos de 3°
-function moveToAngle(idx,target){
-  lastSaved[idx]=positions[idx]; // guardamos valor anterior
+// Movimiento gradual de 3 en 3 grados cada 2 segundos
+function moveToAngle(idx,target,totalTime){
+  pauseFinger(idx);
+  lastSaved[idx]=positions[idx]; 
   let current = positions[idx];
-  let step = target>current?3:-3;
-  let interval = setInterval(()=>{
+  let step = (target>current?3:-3);
+  let intervalTime = 2000;
+  intervals[idx] = setInterval(()=>{
     current += step;
     if((step>0 && current>=target) || (step<0 && current<=target)){
-      current=target;
-      clearInterval(interval);
+      current = target;
+      clearInterval(intervals[idx]);
+      intervals[idx]=null;
     }
     positions[idx]=current;
     document.getElementById('s'+idx).value=current;
     document.getElementById('val'+idx).textContent=current;
     fetch(`/servo?finger=${idx}&value=${current}`).catch(()=>{});
-  },100); // 100ms = 0.1s entre pasos -> suaviza el movimiento
+  },intervalTime);
 }
 
 // ===== Comando de voz =====
@@ -96,18 +112,15 @@ function startVoice(){
     let text=event.results[0][0].transcript.toLowerCase().trim();
     document.getElementById('commandBox').textContent='Comando detectado: '+text;
 
-    // ABRIR MANO / CERRAR MANO
-    if(text.includes('abrir mano')) setAll(90);
-    else if(text.includes('cerrar mano')) setAll(0);
-
-    // Dedo específico: "meñique a 45"
+    if(text.includes('abrir mano')) startAll(90);
+    else if(text.includes('cerrar mano')) startAll(0);
     else{
       for(let i=0;i<5;i++){
         let name=fingerNames[i].toLowerCase();
         if(text.includes(name) && text.match(/\d+/)){
           let val = parseInt(text.match(/\d+/)[0]);
           val=Math.min(Math.max(0,val),90);
-          moveToAngle(i,val);
+          moveToAngle(i,val,2000);
         }
       }
     }
@@ -115,6 +128,6 @@ function startVoice(){
   recognition.onerror=function(e){ console.log('Error reconocimiento',e); };
 }
 </script>
-
 </body>
 </html>
+
