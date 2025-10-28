@@ -21,7 +21,7 @@
   }
   .container {
     margin: 20px auto;
-    max-width: 400px;
+    max-width: 420px;
     background: #161b22;
     padding: 20px;
     border-radius: 10px;
@@ -37,13 +37,7 @@
     display: block;
     margin-bottom: 5px;
   }
-  input[type=range] {
-    width: 100%;
-  }
-  .value {
-    font-size: 0.9em;
-    color: #94a3b8;
-  }
+  input[type=range] { width: 70%; }
   .btn {
     margin: 8px;
     padding: 10px 15px;
@@ -59,198 +53,141 @@
     border: 1px solid #06b6d4;
     color: #06b6d4;
   }
-  .log {
-    margin-top: 15px;
-    background: #11161e;
-    border-radius: 6px;
-    padding: 10px;
-    font-size: 0.9em;
-    text-align: left;
-    height: 100px;
-    overflow-y: auto;
-  }
-  .controls {
-    display: flex;
-    justify-content: center;
-    gap: 5px;
-    margin-top: 5px;
+  .controls { margin-top: 15px; }
+  .fine { margin-left: 4px; padding: 2px 7px; }
+  .bottom-buttons {
+    display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 15px;
   }
 </style>
 </head>
 <body>
-
 <h1>Exoesqueleto de los Timbritos</h1>
 
 <div class="container" id="sliders"></div>
 
-<div>
-  <button class="btn" onclick="abrirMano()">Abrir Mano</button>
-  <button class="btn" onclick="toggleVoice()">🎙 Activar Voz</button>
-  <button class="btn secondary" onclick="togglePauseVoice()">⏸ Pausar Voz</button>
-  <button class="btn secondary" onclick="abrirSelector()">⏪ Regresar al Anterior</button>
+<div class="controls">
+  <button class="btn" onclick="openHand()">Abrir Mano</button>
+  <button class="btn" onclick="closeHand()">Cerrar Mano</button>
+  <button class="btn secondary" onclick="pauseAll()">Pausa</button>
+  <button class="btn" onclick="startVoice()">🎤 Activar Micrófono</button>
 </div>
 
-<div class="log" id="log"></div>
+<h3>Regresar al ángulo anterior</h3>
+<div class="bottom-buttons" id="prevButtons"></div>
 
 <script>
-const fingerNames = ["Meñique", "Anular", "Corazón", "Índice", "Pulgar"];
-let positions = [90, 90, 90, 90, 90];
-let previousPositions = [...positions];
-let paused = [false, false, false, false, false];
-let recognition;
-let voiceActive = false;
-const slidersDiv = document.getElementById('sliders');
-const logBox = document.getElementById('log');
+const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
+let positions = [90,90,90,90,90];
+let previous = [90,90,90,90,90];
+let paused = false;
+let moving = [false,false,false,false,false];
+const ip = ""; // usa vacío si está en el mismo WiFi
 
-/* ====== Crear sliders dinámicamente ====== */
-for (let i = 0; i < 5; i++) {
-  const cont = document.createElement('div');
-  cont.className = 'finger';
-  cont.innerHTML = `
-    <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
-    <div class="controls">
-      <button onclick="ajustarDedo(${i}, -5)">◀</button>
-      <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i}, this.value)">
-      <button onclick="ajustarDedo(${i}, 5)">▶</button>
-    </div>
+const slidersDiv = document.getElementById('sliders');
+const prevButtons = document.getElementById('prevButtons');
+
+/* Crear sliders */
+for (let i=0;i<5;i++){
+  const cont=document.createElement('div');
+  cont.className='finger';
+  cont.innerHTML=`
+    <label>${fingerNames[i]} — <span id="val${i}">${positions[i]}°</span></label>
+    <button class="fine" onclick="adjust(${i},-1)">◄</button>
+    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSlide(${i},this.value)">
+    <button class="fine" onclick="adjust(${i},1)">►</button>
   `;
   slidersDiv.appendChild(cont);
+
+  const pb=document.createElement('button');
+  pb.className='btn secondary';
+  pb.textContent=fingerNames[i];
+  pb.onclick=()=>restorePrev(i);
+  prevButtons.appendChild(pb);
 }
 
-/* ====== Log visual ====== */
-function log(msg) {
-  logBox.innerHTML += msg + "<br>";
-  logBox.scrollTop = logBox.scrollHeight;
+/* Slider */
+function onSlide(i,val){
+  previous[i]=positions[i];
+  positions[i]=parseFloat(val);
+  document.getElementById('val'+i).textContent=val+'°';
+  fetch(`${ip}/servo?finger=${i}&value=${val}`).catch(()=>{});
 }
 
-/* ====== Slider manual ====== */
-function onSliderInput(idx, val) {
-  previousPositions[idx] = positions[idx];
-  positions[idx] = parseInt(val);
-  document.getElementById('val' + idx).textContent = val + '°';
-  fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
+/* Ajuste fino */
+function adjust(i,dir){
+  let val = positions[i]+dir;
+  if(val<0) val=0; if(val>90) val=90;
+  document.getElementById('s'+i).value=val;
+  onSlide(i,val);
 }
 
-/* ====== Botones de ajuste por pasos ====== */
-function ajustarDedo(idx, step) {
-  let newPos = Math.max(0, Math.min(90, positions[idx] + step));
-  previousPositions[idx] = positions[idx];
-  positions[idx] = newPos;
-  document.getElementById('s' + idx).value = newPos;
-  document.getElementById('val' + idx).textContent = newPos + '°';
-  fetch(`/servo?finger=${idx}&value=${newPos}`).catch(()=>{});
+/* Restaurar anterior */
+function restorePrev(i){
+  const temp=positions[i];
+  positions[i]=previous[i];
+  previous[i]=temp;
+  document.getElementById('s'+i).value=positions[i];
+  onSlide(i,positions[i]);
 }
 
-/* ====== Regresar al anterior ====== */
-function abrirSelector() {
-  let opt = prompt("Selecciona dedo: 0=Meñique, 1=Anular, 2=Corazón, 3=Índice, 4=Pulgar");
-  if(opt !== null) {
-    opt = parseInt(opt);
-    if(opt>=0 && opt<5){
-      let prev = previousPositions[opt];
-      positions[opt] = prev;
-      document.getElementById('s'+opt).value = prev;
-      document.getElementById('val'+opt).textContent = prev + '°';
-      fetch(`/servo?finger=${opt}&value=${prev}`).catch(()=>{});
-      log(`↩ ${fingerNames[opt]} regresó a ${prev}°`);
-    }
-  }
-}
+/* Pausa */
+function pauseAll(){ paused=!paused; alert(paused?"Movimiento pausado":"Reanudado"); }
 
-/* ====== Movimiento suave ====== */
-async function moverSuave(idx, destino) {
-  while(positions[idx] !== destino && !paused[idx]) {
-    let step = (destino > positions[idx]) ? 5 : -5;
-    positions[idx] = Math.max(0, Math.min(90, positions[idx] + step));
-    document.getElementById('s'+idx).value = positions[idx];
-    document.getElementById('val'+idx).textContent = positions[idx] + '°';
-    fetch(`/servo?finger=${idx}&value=${positions[idx]}`).catch(()=>{});
-    await new Promise(r => setTimeout(r, 2000));
-  }
-}
-
-/* ====== Abrir mano completa ====== */
-function abrirMano() {
-  log("🖐 Abriendo toda la mano...");
-  for(let i=0;i<5;i++) moverSuave(i, 90);
-}
-
-/* ====== Reconocimiento de voz continuo ====== */
-function toggleVoice() {
-  if(!('webkitSpeechRecognition' in window)){
-    alert("Tu navegador no soporta reconocimiento de voz");
-    return;
-  }
-  if(voiceActive) {
-    log("🎙 El reconocimiento ya está activo.");
-    return;
-  }
-  recognition = new webkitSpeechRecognition();
-  recognition.lang = "es-ES";
-  recognition.continuous = true;
-  recognition.interimResults = false;
-
-  recognition.onstart = ()=> {
-    voiceActive = true;
-    log("🎤 Reconocimiento de voz activado...");
-  };
-  recognition.onresult = e=>{
-    let cmd = e.results[e.results.length - 1][0].transcript.toLowerCase();
-    log("🗣 Comando: " + cmd);
-    procesarComando(cmd);
-  };
-  recognition.onerror = e=> log("⚠ Error: " + e.error);
-  recognition.onend = ()=> {
-    if(voiceActive) recognition.start(); // reiniciar automáticamente
-  };
-  recognition.start();
-}
-
-/* ====== Pausar reconocimiento ====== */
-function togglePauseVoice() {
-  if(voiceActive && recognition) {
-    recognition.stop();
-    voiceActive = false;
-    log("⏸ Voz pausada manualmente.");
-  } else {
-    toggleVoice();
-  }
-}
-
-/* ====== Procesar comandos de voz ====== */
-function procesarComando(cmd){
-  if(cmd.includes("abrir mano")) {
-    log("🤖 Abriendo toda la mano...");
-    for(let i=0;i<5;i++) moverSuave(i,90);
-  }
-  else if(cmd.includes("cerrar mano")) {
-    log("🤖 Cerrando toda la mano...");
-    for(let i=0;i<5;i++) moverSuave(i,0);
-  }
-  else if(cmd.includes("pausar")) {
-    fingerNames.forEach((f,idx)=>{
-      if(cmd.includes(f.toLowerCase())) {
-        paused[idx] = true;
-        log(`⏸ ${f} pausado.`);
+/* Movimiento gradual */
+function gradualMove(targets){
+  const step=3;
+  const interval=setInterval(()=>{
+    let done=true;
+    for(let i=0;i<5;i++){
+      if(moving[i]) continue;
+      let cur=positions[i];
+      let tgt=targets[i];
+      if(paused) return;
+      if(Math.abs(cur-tgt)>0.5){
+        done=false;
+        previous[i]=cur;
+        if(cur<tgt) cur=Math.min(cur+step,tgt);
+        else cur=Math.max(cur-step,tgt);
+        positions[i]=cur;
+        document.getElementById('s'+i).value=cur;
+        document.getElementById('val'+i).textContent=Math.round(cur)+'°';
+        fetch(`${ip}/servo?finger=${i}&value=${cur}`).catch(()=>{});
       }
-    });
-    if(!cmd.match(/meñique|anular|corazón|índice|pulgar/)) {
-      paused = [true,true,true,true,true];
-      log("⏸ Todos los dedos pausados.");
     }
-  } else {
-    fingerNames.forEach((f,idx)=>{
-      if(cmd.includes(f.toLowerCase())){
-        let match = cmd.match(/\d+/);
-        if(match){
-          let destino = parseInt(match[0]);
-          paused[idx]=false;
-          log(`➡ Moviendo ${f} a ${destino}°`);
-          moverSuave(idx, destino);
+    if(done) clearInterval(interval);
+  },2000);
+}
+
+/* Abrir/Cerrar */
+function openHand(){ gradualMove([90,90,90,90,90]); }
+function closeHand(){ gradualMove([0,0,0,0,0]); }
+
+/* Voz */
+function startVoice(){
+  if(!('webkitSpeechRecognition'in window)){ alert("Tu navegador no soporta voz"); return; }
+  const rec=new webkitSpeechRecognition();
+  rec.lang='es-ES'; rec.start();
+  rec.onresult=(e)=>{
+    const cmd=e.results[0][0].transcript.toLowerCase();
+    console.log("Comando:",cmd);
+    if(cmd.includes("abrir mano")) openHand();
+    else if(cmd.includes("cerrar mano")) closeHand();
+    else if(cmd.includes("pausa")) pauseAll();
+    else{
+      for(let i=0;i<5;i++){
+        const name=fingerNames[i].toLowerCase();
+        if(cmd.includes(name)){
+          const num=parseInt(cmd.match(/\d+/));
+          if(!isNaN(num)&&num>=0&&num<=90){
+            let targets=[...positions];
+            targets[i]=num;
+            gradualMove(targets);
+          }
         }
       }
-    });
-  }
+    }
+  };
+  rec.onerror=()=>alert("Error en reconocimiento");
 }
 </script>
 </body>
