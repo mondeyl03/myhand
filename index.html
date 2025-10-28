@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Exoesqueleto de los Timbritos</title>
+<title>Control Mano Robótica</title>
 <style>
 body{font-family:Arial;background:#0d1117;color:#e6eef6;text-align:center;margin:0;padding:0;}
 h1{background:#06b6d4;color:#0d1117;padding:10px;margin:0;}
@@ -21,27 +21,28 @@ input[type=range]{width:70%;}
 <h1>Control Mano Robótica</h1>
 <div class="container" id="sliders"></div>
 <div>
-  <button class="btn" onclick="slowVoiceOpen()">Abrir Mano</button>
-  <button class="btn" onclick="slowVoiceClose()">Cerrar Mano</button>
-  <button class="btn secondary" onclick="resetAll()">Ajustar inicio</button>
+  <button class="btn" onclick="slowMove('open')">Abrir Mano</button>
+  <button class="btn" onclick="slowMove('close')">Cerrar Mano</button>
+  <button class="btn secondary" onclick="slowMove('reset')">Ajustar inicio</button>
   <button class="btn" id="start">🎤 Voz</button>
 </div>
 <div id="status" style="margin-top:15px;">Presiona "Voz" y di abrir o cerrar</div>
 
 <script>
-const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP del ESP32
+const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP de tu ESP32
 const fingerNames=["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions=[90,90,90,90,90];
 const slidersDiv=document.getElementById('sliders');
 const status=document.getElementById('status');
+let moving=false;
 
-/* Función para enviar comando al ESP32 */
+/* Enviar valor a ESP32 */
 function sendServo(idx,val){
   if(idx==2||idx==3) val=90-val; // invertir corazon/indice
   fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-/* Generar sliders + flechas */
+/* Crear sliders */
 for(let i=0;i<5;i++){
   const cont=document.createElement('div');
   cont.className='finger';
@@ -54,7 +55,7 @@ for(let i=0;i<5;i++){
   slidersDiv.appendChild(cont);
 }
 
-/* Slider input */
+/* Actualizar valor desde slider */
 function onSliderInput(idx,val){
   val=parseInt(val);
   positions[idx]=val;
@@ -62,7 +63,7 @@ function onSliderInput(idx,val){
   sendServo(idx,val);
 }
 
-/* Ajustar con flechas 1 en 1 */
+/* Ajustar con flechas */
 function adjustSlider(idx,delta){
   let val=positions[idx]+delta;
   if(val<0) val=0;
@@ -73,43 +74,45 @@ function adjustSlider(idx,delta){
   sendServo(idx,val);
 }
 
-/* Funciones generales */
-function setAll(angle){
+/* Movimiento lento e independiente */
+function slowMove(action){
+  if(moving){ status.innerText="Movimiento en curso..."; return; }
+  moving=true;
+  let target=[];
+  if(action==='open') target=[90,90,90,90,90];
+  if(action==='close') target=[0,0,0,0,0];
+  if(action==='reset') target=[90,90,90,90,90];
+  status.innerText = (action==='open') ? "Abriendo..." :
+                     (action==='close') ? "Cerrando..." : "Ajustando inicio...";
+  stepMove(target,action);
+}
+
+function stepMove(target,action){
+  let done=true;
   for(let i=0;i<5;i++){
-    positions[i]=angle;
-    document.getElementById('s'+i).value=angle;
-    document.getElementById('val'+i).textContent=angle+'°';
-    sendServo(i,angle);
+    let current=positions[i];
+    if(current<target[i]){
+      positions[i]=Math.min(current+5,target[i]);
+      done=false;
+    } else if(current>target[i]){
+      positions[i]=Math.max(current-5,target[i]);
+      done=false;
+    }
+    document.getElementById('s'+i).value=positions[i];
+    document.getElementById('val'+i).textContent=positions[i]+'°';
+    sendServo(i,positions[i]);
   }
-}
-
-function resetAll(){ setAll(90); }
-
-/* Movimiento de voz lento de 5 en 5 cada 2 segundos */
-function slowVoiceOpen(){
-  status.innerText="Abriendo mano lentamente...";
-  let steps=Array.from({length: Math.ceil((90-positions[0])/5)}, (_,i)=>positions[0]+5*(i+1));
-  moveAllSteps(steps);
-}
-function slowVoiceClose(){
-  status.innerText="Cerrando mano lentamente...";
-  let steps=Array.from({length: Math.ceil(positions[0]/5)}, (_,i)=>positions[0]-5*(i+1));
-  moveAllSteps(steps);
-}
-
-function moveAllSteps(steps){
-  if(steps.length===0) return;
-  let step=steps.shift();
-  for(let i=0;i<5;i++){
-    positions[i]=step;
-    document.getElementById('s'+i).value=step;
-    document.getElementById('val'+i).textContent=step+'°';
-    sendServo(i,step);
+  if(done){
+    moving=false;
+    if(action==='open') status.innerText="🖐 Mano abierta";
+    else if(action==='close') status.innerText="✊ Mano cerrada";
+    else status.innerText="✅ Ajuste completado";
+    return;
   }
-  setTimeout(()=>moveAllSteps(steps),2000); // cada 2 segundos
+  setTimeout(()=>stepMove(target,action),2000); // cada 2 s
 }
 
-/* Control de voz */
+/* Control por voz */
 document.getElementById('start').addEventListener('click',()=>{
   if(!('webkitSpeechRecognition' in window)){ status.innerText="Tu navegador no soporta voz"; return;}
   const rec=new webkitSpeechRecognition();
@@ -117,12 +120,12 @@ document.getElementById('start').addEventListener('click',()=>{
   rec.interimResults=false;
   rec.maxAlternatives=1;
   rec.start();
-  status.innerText="Escuchando...";
+  status.innerText="🎙 Escuchando...";
   rec.onresult=function(e){
     const cmd=e.results[0][0].transcript.toLowerCase();
     status.innerText="Comando: "+cmd;
-    if(cmd.includes("abrir")) slowVoiceOpen();
-    else if(cmd.includes("cerrar")) slowVoiceClose();
+    if(cmd.includes("abrir")) slowMove('open');
+    else if(cmd.includes("cerrar")) slowMove('close');
     else status.innerText="Comando no reconocido";
   };
   rec.onerror=function(e){status.innerText="Error: "+e.error;}
