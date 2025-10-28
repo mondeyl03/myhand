@@ -3,182 +3,255 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Control Mano Robótica</title>
+<title>Exoesqueleto de los Timbritos</title>
 <style>
-body{font-family:Arial;background:#0d1117;color:#e6eef6;text-align:center;margin:0;padding:0;}
-h1{background:#06b6d4;color:#0d1117;padding:10px;margin:0;}
-.container{margin:20px auto;max-width:400px;background:#161b22;padding:20px;border-radius:10px;}
-.finger{margin:15px 0;padding:10px;border:1px solid #06b6d4;border-radius:8px;display:flex;align-items:center;justify-content:space-between;}
-.finger label{font-weight:bold;display:block;margin-bottom:5px;flex:1;}
-input[type=range]{width:70%;}
-.value{font-size:0.9em;color:#94a3b8;margin-left:10px;}
-.btn{margin:8px;padding:10px 15px;background:#06b6d4;border:none;color:#0d1117;border-radius:8px;cursor:pointer;font-weight:bold;}
-.btn.secondary{background:transparent;border:1px solid #06b6d4;color:#06b6d4;}
-.arrow-btn{margin-left:5px;margin-right:5px;padding:4px 8px;font-weight:bold;border-radius:5px;border:none;background:#06b6d4;color:#0d1117;cursor:pointer;}
+  body {
+    font-family: Arial, sans-serif;
+    background: #0d1117;
+    color: #e6eef6;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+  }
+  h1 {
+    background: #06b6d4;
+    color: #0d1117;
+    padding: 10px;
+    margin: 0;
+  }
+  .container {
+    margin: 20px auto;
+    max-width: 400px;
+    background: #161b22;
+    padding: 20px;
+    border-radius: 10px;
+  }
+  .finger {
+    margin: 15px 0;
+    padding: 10px;
+    border: 1px solid #06b6d4;
+    border-radius: 8px;
+  }
+  .finger label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+  }
+  input[type=range] {
+    width: 100%;
+  }
+  .value {
+    font-size: 0.9em;
+    color: #94a3b8;
+  }
+  .btn {
+    margin: 8px;
+    padding: 10px 15px;
+    background: #06b6d4;
+    border: none;
+    color: #0d1117;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+  .btn.secondary {
+    background: transparent;
+    border: 1px solid #06b6d4;
+    color: #06b6d4;
+  }
+  .log {
+    margin-top: 15px;
+    background: #11161e;
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 0.9em;
+    text-align: left;
+    height: 100px;
+    overflow-y: auto;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-top: 5px;
+  }
 </style>
 </head>
 <body>
-<h1>Control Mano Robótica</h1>
+
+<h1>Exoesqueleto de los Timbritos</h1>
 
 <div class="container" id="sliders"></div>
 
 <div>
-  <button class="btn" onclick="slowMove('open')">Abrir Mano</button>
-  <button class="btn" onclick="slowMove('close')">Cerrar Mano</button>
-  <button class="btn secondary" onclick="slowMove('reset')">Ajustar inicio</button>
-  <button class="btn" onclick="pauseMove()">⏸ Pausar</button>
-  <button class="btn" id="start">🎤 Voz</button>
+  <button class="btn" onclick="abrirMano()">Abrir Mano</button>
+  <button class="btn" onclick="toggleVoice()">🎙 Activar Voz</button>
+  <button class="btn secondary" onclick="togglePauseVoice()">⏸ Pausar Voz</button>
+  <button class="btn secondary" onclick="abrirSelector()">⏪ Regresar al Anterior</button>
 </div>
 
-<div id="status" style="margin-top:15px;">Presiona "Voz" y di abrir o cerrar</div>
+<div class="log" id="log"></div>
 
 <script>
-const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP real del ESP32
-const fingerNames = ["meñique","anular","corazón","índice","pulgar"];
-let positions = [90,90,90,90,90];
+const fingerNames = ["Meñique", "Anular", "Corazón", "Índice", "Pulgar"];
+let positions = [90, 90, 90, 90, 90];
+let previousPositions = [...positions];
+let paused = [false, false, false, false, false];
+let recognition;
+let voiceActive = false;
 const slidersDiv = document.getElementById('sliders');
-const status = document.getElementById('status');
-let moving = false;
-let paused = false;
+const logBox = document.getElementById('log');
 
-/* enviar valor a ESP32 */
-function sendServo(idx, val){
-  if(idx==2||idx==3) val = 90 - val; // invertir corazón e índice
-  fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
-}
-
-/* crear sliders */
-for(let i=0;i<5;i++){
+/* ====== Crear sliders dinámicamente ====== */
+for (let i = 0; i < 5; i++) {
   const cont = document.createElement('div');
   cont.className = 'finger';
   cont.innerHTML = `
     <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
-    <button class="arrow-btn" onclick="adjustSlider(${i},-1)">◀</button>
-    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i},this.value)">
-    <button class="arrow-btn" onclick="adjustSlider(${i},1)">▶</button>
+    <div class="controls">
+      <button onclick="ajustarDedo(${i}, -5)">◀</button>
+      <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i}, this.value)">
+      <button onclick="ajustarDedo(${i}, 5)">▶</button>
+    </div>
   `;
   slidersDiv.appendChild(cont);
 }
 
-/* slider manual */
-function onSliderInput(idx,val){
-  val=parseInt(val);
-  positions[idx]=val;
-  document.getElementById('val'+idx).textContent=val+'°';
-  sendServo(idx,val);
+/* ====== Log visual ====== */
+function log(msg) {
+  logBox.innerHTML += msg + "<br>";
+  logBox.scrollTop = logBox.scrollHeight;
 }
 
-/* ajuste con flechas */
-function adjustSlider(idx,delta){
-  let val=positions[idx]+delta;
-  if(val<0) val=0;
-  if(val>90) val=90;
-  positions[idx]=val;
-  document.getElementById('s'+idx).value=val;
-  document.getElementById('val'+idx).textContent=val+'°';
-  sendServo(idx,val);
+/* ====== Slider manual ====== */
+function onSliderInput(idx, val) {
+  previousPositions[idx] = positions[idx];
+  positions[idx] = parseInt(val);
+  document.getElementById('val' + idx).textContent = val + '°';
+  fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-/* pausa */
-function pauseMove(){
-  paused = true;
-  moving = false;
-  status.innerText = "⏸ Movimiento pausado";
+/* ====== Botones de ajuste por pasos ====== */
+function ajustarDedo(idx, step) {
+  let newPos = Math.max(0, Math.min(90, positions[idx] + step));
+  previousPositions[idx] = positions[idx];
+  positions[idx] = newPos;
+  document.getElementById('s' + idx).value = newPos;
+  document.getElementById('val' + idx).textContent = newPos + '°';
+  fetch(`/servo?finger=${idx}&value=${newPos}`).catch(()=>{});
 }
 
-/* movimiento completo o individual */
-function slowMove(action, fingerIndex=null, targetValue=null){
-  if(moving){ status.innerText="Movimiento en curso..."; return; }
-  moving=true;
-  paused=false;
-  let target=[];
-  if(action==='open') target=[90,90,90,90,90];
-  if(action==='close') target=[0,0,0,0,0];
-  if(action==='reset') target=[90,90,90,90,90];
-  if(action==='single') target = positions.slice();
-
-  if(action==='single' && fingerIndex!==null && targetValue!==null){
-    target[fingerIndex]=targetValue;
-  }
-
-  status.innerText = (action==='open') ? "🖐 Abriendo mano..." :
-                     (action==='close') ? "✊ Cerrando mano..." :
-                     (action==='reset') ? "🔄 Ajustando inicio..." :
-                     "Moviendo dedo...";
-  stepMove(target,action,fingerIndex);
-}
-
-function stepMove(target,action,fingerIndex){
-  if(paused){ moving=false; return; }
-
-  let done=true;
-  for(let i=0;i<5;i++){
-    if(action==='single' && i!==fingerIndex) continue;
-    let current=positions[i];
-    if(current<target[i]){
-      positions[i]=Math.min(current+2,target[i]);
-      done=false;
-    } else if(current>target[i]){
-      positions[i]=Math.max(current-2,target[i]);
-      done=false;
+/* ====== Regresar al anterior ====== */
+function abrirSelector() {
+  let opt = prompt("Selecciona dedo: 0=Meñique, 1=Anular, 2=Corazón, 3=Índice, 4=Pulgar");
+  if(opt !== null) {
+    opt = parseInt(opt);
+    if(opt>=0 && opt<5){
+      let prev = previousPositions[opt];
+      positions[opt] = prev;
+      document.getElementById('s'+opt).value = prev;
+      document.getElementById('val'+opt).textContent = prev + '°';
+      fetch(`/servo?finger=${opt}&value=${prev}`).catch(()=>{});
+      log(`↩ ${fingerNames[opt]} regresó a ${prev}°`);
     }
-    document.getElementById('s'+i).value=positions[i];
-    document.getElementById('val'+i).textContent=positions[i]+'°';
-    sendServo(i,positions[i]);
   }
-
-  if(done){
-    moving=false;
-    if(action==='open') status.innerText="🖐 Mano abierta";
-    else if(action==='close') status.innerText="✊ Mano cerrada";
-    else if(action==='reset') status.innerText="✅ Ajuste completado";
-    else status.innerText="✅ Movimiento finalizado";
-    return;
-  }
-  setTimeout(()=>stepMove(target,action,fingerIndex),2000);
 }
 
-/* reconocimiento de voz */
-document.getElementById('start').addEventListener('click',()=>{
+/* ====== Movimiento suave ====== */
+async function moverSuave(idx, destino) {
+  while(positions[idx] !== destino && !paused[idx]) {
+    let step = (destino > positions[idx]) ? 5 : -5;
+    positions[idx] = Math.max(0, Math.min(90, positions[idx] + step));
+    document.getElementById('s'+idx).value = positions[idx];
+    document.getElementById('val'+idx).textContent = positions[idx] + '°';
+    fetch(`/servo?finger=${idx}&value=${positions[idx]}`).catch(()=>{});
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+
+/* ====== Abrir mano completa ====== */
+function abrirMano() {
+  log("🖐 Abriendo toda la mano...");
+  for(let i=0;i<5;i++) moverSuave(i, 90);
+}
+
+/* ====== Reconocimiento de voz continuo ====== */
+function toggleVoice() {
   if(!('webkitSpeechRecognition' in window)){
-    status.innerText="Tu navegador no soporta voz";
+    alert("Tu navegador no soporta reconocimiento de voz");
     return;
   }
-  const rec=new webkitSpeechRecognition();
-  rec.lang="es-ES";
-  rec.interimResults=false;
-  rec.maxAlternatives=1;
-  rec.start();
-  status.innerText="🎙 Escuchando...";
-  rec.onresult=function(e){
-    const cmd=e.results[0][0].transcript.toLowerCase();
-    status.innerText="Comando: "+cmd;
+  if(voiceActive) {
+    log("🎙 El reconocimiento ya está activo.");
+    return;
+  }
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "es-ES";
+  recognition.continuous = true;
+  recognition.interimResults = false;
 
-    if(cmd.includes("pausa")) pauseMove();
-    else if(cmd.includes("abrir mano")) slowMove('open');
-    else if(cmd.includes("cerrar mano")) slowMove('close');
-    else {
-      for(let i=0;i<fingerNames.length;i++){
-        if(cmd.includes(fingerNames[i])){
-          if(cmd.includes("abrir")) slowMove('single',i,90);
-          else if(cmd.includes("cerrar")) slowMove('single',i,0);
-          else {
-            const num = cmd.match(/\d+/);
-            if(num){
-              let val=parseInt(num[0]);
-              if(val<0) val=0;
-              if(val>90) val=90;
-              slowMove('single',i,val);
-            }
-          }
-          return;
+  recognition.onstart = ()=> {
+    voiceActive = true;
+    log("🎤 Reconocimiento de voz activado...");
+  };
+  recognition.onresult = e=>{
+    let cmd = e.results[e.results.length - 1][0].transcript.toLowerCase();
+    log("🗣 Comando: " + cmd);
+    procesarComando(cmd);
+  };
+  recognition.onerror = e=> log("⚠ Error: " + e.error);
+  recognition.onend = ()=> {
+    if(voiceActive) recognition.start(); // reiniciar automáticamente
+  };
+  recognition.start();
+}
+
+/* ====== Pausar reconocimiento ====== */
+function togglePauseVoice() {
+  if(voiceActive && recognition) {
+    recognition.stop();
+    voiceActive = false;
+    log("⏸ Voz pausada manualmente.");
+  } else {
+    toggleVoice();
+  }
+}
+
+/* ====== Procesar comandos de voz ====== */
+function procesarComando(cmd){
+  if(cmd.includes("abrir mano")) {
+    log("🤖 Abriendo toda la mano...");
+    for(let i=0;i<5;i++) moverSuave(i,90);
+  }
+  else if(cmd.includes("cerrar mano")) {
+    log("🤖 Cerrando toda la mano...");
+    for(let i=0;i<5;i++) moverSuave(i,0);
+  }
+  else if(cmd.includes("pausar")) {
+    fingerNames.forEach((f,idx)=>{
+      if(cmd.includes(f.toLowerCase())) {
+        paused[idx] = true;
+        log(`⏸ ${f} pausado.`);
+      }
+    });
+    if(!cmd.match(/meñique|anular|corazón|índice|pulgar/)) {
+      paused = [true,true,true,true,true];
+      log("⏸ Todos los dedos pausados.");
+    }
+  } else {
+    fingerNames.forEach((f,idx)=>{
+      if(cmd.includes(f.toLowerCase())){
+        let match = cmd.match(/\d+/);
+        if(match){
+          let destino = parseInt(match[0]);
+          paused[idx]=false;
+          log(`➡ Moviendo ${f} a ${destino}°`);
+          moverSuave(idx, destino);
         }
       }
-      status.innerText="Comando no reconocido";
-    }
-  };
-  rec.onerror=function(e){status.innerText="Error: "+e.error;}
-});
+    });
+  }
+}
 </script>
 </body>
 </html>
