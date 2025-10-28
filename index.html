@@ -19,34 +19,39 @@ input[type=range]{width:70%;}
 </head>
 <body>
 <h1>Control Mano Robótica</h1>
+
 <div class="container" id="sliders"></div>
+
 <div>
   <button class="btn" onclick="slowMove('open')">Abrir Mano</button>
   <button class="btn" onclick="slowMove('close')">Cerrar Mano</button>
   <button class="btn secondary" onclick="slowMove('reset')">Ajustar inicio</button>
+  <button class="btn" onclick="pauseMove()">⏸ Pausar</button>
   <button class="btn" id="start">🎤 Voz</button>
 </div>
+
 <div id="status" style="margin-top:15px;">Presiona "Voz" y di abrir o cerrar</div>
 
 <script>
-const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP de tu ESP32
-const fingerNames=["Meñique","Anular","Corazón","Índice","Pulgar"];
-let positions=[90,90,90,90,90];
-const slidersDiv=document.getElementById('sliders');
-const status=document.getElementById('status');
-let moving=false;
+const ESP32_IP = "192.168.0.105"; // <-- cambia por la IP real del ESP32
+const fingerNames = ["meñique","anular","corazón","índice","pulgar"];
+let positions = [90,90,90,90,90];
+const slidersDiv = document.getElementById('sliders');
+const status = document.getElementById('status');
+let moving = false;
+let paused = false;
 
-/* Enviar valor a ESP32 */
-function sendServo(idx,val){
-  if(idx==2||idx==3) val=90-val; // invertir corazon/indice
+/* enviar valor a ESP32 */
+function sendServo(idx, val){
+  if(idx==2||idx==3) val = 90 - val; // invertir corazón e índice
   fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-/* Crear sliders */
+/* crear sliders */
 for(let i=0;i<5;i++){
-  const cont=document.createElement('div');
-  cont.className='finger';
-  cont.innerHTML=`
+  const cont = document.createElement('div');
+  cont.className = 'finger';
+  cont.innerHTML = `
     <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}°</span></label>
     <button class="arrow-btn" onclick="adjustSlider(${i},-1)">◀</button>
     <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSliderInput(${i},this.value)">
@@ -55,7 +60,7 @@ for(let i=0;i<5;i++){
   slidersDiv.appendChild(cont);
 }
 
-/* Actualizar valor desde slider */
+/* slider manual */
 function onSliderInput(idx,val){
   val=parseInt(val);
   positions[idx]=val;
@@ -63,7 +68,7 @@ function onSliderInput(idx,val){
   sendServo(idx,val);
 }
 
-/* Ajustar con flechas */
+/* ajuste con flechas */
 function adjustSlider(idx,delta){
   let val=positions[idx]+delta;
   if(val<0) val=0;
@@ -74,47 +79,71 @@ function adjustSlider(idx,delta){
   sendServo(idx,val);
 }
 
-/* Movimiento lento e independiente */
-function slowMove(action){
+/* pausa */
+function pauseMove(){
+  paused = true;
+  moving = false;
+  status.innerText = "⏸ Movimiento pausado";
+}
+
+/* movimiento completo o individual */
+function slowMove(action, fingerIndex=null, targetValue=null){
   if(moving){ status.innerText="Movimiento en curso..."; return; }
   moving=true;
+  paused=false;
   let target=[];
   if(action==='open') target=[90,90,90,90,90];
   if(action==='close') target=[0,0,0,0,0];
   if(action==='reset') target=[90,90,90,90,90];
-  status.innerText = (action==='open') ? "Abriendo..." :
-                     (action==='close') ? "Cerrando..." : "Ajustando inicio...";
-  stepMove(target,action);
+  if(action==='single') target = positions.slice();
+
+  if(action==='single' && fingerIndex!==null && targetValue!==null){
+    target[fingerIndex]=targetValue;
+  }
+
+  status.innerText = (action==='open') ? "🖐 Abriendo mano..." :
+                     (action==='close') ? "✊ Cerrando mano..." :
+                     (action==='reset') ? "🔄 Ajustando inicio..." :
+                     "Moviendo dedo...";
+  stepMove(target,action,fingerIndex);
 }
 
-function stepMove(target,action){
+function stepMove(target,action,fingerIndex){
+  if(paused){ moving=false; return; }
+
   let done=true;
   for(let i=0;i<5;i++){
+    if(action==='single' && i!==fingerIndex) continue;
     let current=positions[i];
     if(current<target[i]){
-      positions[i]=Math.min(current+5,target[i]);
+      positions[i]=Math.min(current+2,target[i]);
       done=false;
     } else if(current>target[i]){
-      positions[i]=Math.max(current-5,target[i]);
+      positions[i]=Math.max(current-2,target[i]);
       done=false;
     }
     document.getElementById('s'+i).value=positions[i];
     document.getElementById('val'+i).textContent=positions[i]+'°';
     sendServo(i,positions[i]);
   }
+
   if(done){
     moving=false;
     if(action==='open') status.innerText="🖐 Mano abierta";
     else if(action==='close') status.innerText="✊ Mano cerrada";
-    else status.innerText="✅ Ajuste completado";
+    else if(action==='reset') status.innerText="✅ Ajuste completado";
+    else status.innerText="✅ Movimiento finalizado";
     return;
   }
-  setTimeout(()=>stepMove(target,action),2000); // cada 2 s
+  setTimeout(()=>stepMove(target,action,fingerIndex),2000);
 }
 
-/* Control por voz */
+/* reconocimiento de voz */
 document.getElementById('start').addEventListener('click',()=>{
-  if(!('webkitSpeechRecognition' in window)){ status.innerText="Tu navegador no soporta voz"; return;}
+  if(!('webkitSpeechRecognition' in window)){
+    status.innerText="Tu navegador no soporta voz";
+    return;
+  }
   const rec=new webkitSpeechRecognition();
   rec.lang="es-ES";
   rec.interimResults=false;
@@ -124,9 +153,29 @@ document.getElementById('start').addEventListener('click',()=>{
   rec.onresult=function(e){
     const cmd=e.results[0][0].transcript.toLowerCase();
     status.innerText="Comando: "+cmd;
-    if(cmd.includes("abrir")) slowMove('open');
-    else if(cmd.includes("cerrar")) slowMove('close');
-    else status.innerText="Comando no reconocido";
+
+    if(cmd.includes("pausa")) pauseMove();
+    else if(cmd.includes("abrir mano")) slowMove('open');
+    else if(cmd.includes("cerrar mano")) slowMove('close');
+    else {
+      for(let i=0;i<fingerNames.length;i++){
+        if(cmd.includes(fingerNames[i])){
+          if(cmd.includes("abrir")) slowMove('single',i,90);
+          else if(cmd.includes("cerrar")) slowMove('single',i,0);
+          else {
+            const num = cmd.match(/\d+/);
+            if(num){
+              let val=parseInt(num[0]);
+              if(val<0) val=0;
+              if(val>90) val=90;
+              slowMove('single',i,val);
+            }
+          }
+          return;
+        }
+      }
+      status.innerText="Comando no reconocido";
+    }
   };
   rec.onerror=function(e){status.innerText="Error: "+e.error;}
 });
