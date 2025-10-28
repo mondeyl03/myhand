@@ -1,194 +1,120 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Exoesqueleto de los Timbritos</title>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #0d1117;
-    color: #e6eef6;
-    text-align: center;
-    margin: 0;
-    padding: 0;
-  }
-  h1 {
-    background: #06b6d4;
-    color: #0d1117;
-    padding: 10px;
-    margin: 0;
-  }
-  .container {
-    margin: 20px auto;
-    max-width: 420px;
-    background: #161b22;
-    padding: 20px;
-    border-radius: 10px;
-  }
-  .finger {
-    margin: 15px 0;
-    padding: 10px;
-    border: 1px solid #06b6d4;
-    border-radius: 8px;
-  }
-  .finger label {
-    font-weight: bold;
-    display: block;
-    margin-bottom: 5px;
-  }
-  input[type=range] { width: 70%; }
-  .btn {
-    margin: 8px;
-    padding: 10px 15px;
-    background: #06b6d4;
-    border: none;
-    color: #0d1117;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: bold;
-  }
-  .btn.secondary {
-    background: transparent;
-    border: 1px solid #06b6d4;
-    color: #06b6d4;
-  }
-  .controls { margin-top: 15px; }
-  .fine { margin-left: 4px; padding: 2px 7px; }
-  .bottom-buttons {
-    display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-top: 15px;
-  }
+  body { font-family: Arial, sans-serif; background: #0d1117; color: #e6eef6; text-align: center; margin: 0; padding: 0; }
+  h1 { background: #06b6d4; color: #0d1117; padding: 10px; margin: 0; }
+  .container { margin: 20px auto; max-width: 400px; background: #161b22; padding: 20px; border-radius: 10px; }
+  .finger { margin: 15px 0; padding: 10px; border: 1px solid #06b6d4; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; }
+  .finger label { font-weight: bold; display: block; margin-bottom: 5px; }
+  input[type=range] { width: 65%; }
+  .value { font-size: 0.9em; color: #94a3b8; width: 35px; display: inline-block; text-align: right; }
+  .btn { margin: 5px; padding: 10px 15px; background: #06b6d4; border: none; color: #0d1117; border-radius: 8px; cursor: pointer; font-weight: bold; }
+  .btn.secondary { background: transparent; border: 1px solid #06b6d4; color: #06b6d4; }
+  .control-buttons { margin-top: 10px; }
+  .mic-button { margin: 10px; padding: 10px; background: #facc15; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; }
+  #commandBox { margin-top:10px; font-size: 1em; color: #facc15; min-height: 20px; }
+  .hook-btn { margin-left: 5px; padding: 5px 8px; font-size: 0.8em; cursor: pointer; border-radius: 5px; border: 1px solid #06b6d4; background: transparent; color: #06b6d4; }
 </style>
 </head>
 <body>
+
 <h1>Exoesqueleto de los Timbritos</h1>
 
 <div class="container" id="sliders"></div>
 
-<div class="controls">
-  <button class="btn" onclick="openHand()">Abrir Mano</button>
-  <button class="btn" onclick="closeHand()">Cerrar Mano</button>
-  <button class="btn secondary" onclick="pauseAll()">Pausa</button>
-  <button class="btn" onclick="startVoice()">🎤 Activar Micrófono</button>
+<div class="control-buttons">
+  <button class="btn" onclick="setAll(90)">Abrir Mano</button>
+  <button class="btn" onclick="setAll(0)">Cerrar Mano</button>
 </div>
 
-<h3>Regresar al ángulo anterior</h3>
-<div class="bottom-buttons" id="prevButtons"></div>
+<button class="mic-button" onclick="startVoice()">🎤</button>
+<div id="commandBox"></div>
 
 <script>
 const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions = [90,90,90,90,90];
-let previous = [90,90,90,90,90];
-let paused = false;
-let moving = [false,false,false,false,false];
-const ip = ""; // usa vacío si está en el mismo WiFi
-
+let lastSaved = [90,90,90,90,90];
 const slidersDiv = document.getElementById('sliders');
-const prevButtons = document.getElementById('prevButtons');
 
-/* Crear sliders */
-for (let i=0;i<5;i++){
-  const cont=document.createElement('div');
-  cont.className='finger';
-  cont.innerHTML=`
-    <label>${fingerNames[i]} — <span id="val${i}">${positions[i]}°</span></label>
-    <button class="fine" onclick="adjust(${i},-1)">◄</button>
-    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" oninput="onSlide(${i},this.value)">
-    <button class="fine" onclick="adjust(${i},1)">►</button>
+for(let i=0;i<5;i++){
+  const cont = document.createElement('div');
+  cont.className = 'finger';
+  cont.innerHTML = `
+    <label>${fingerNames[i]} — <span class="value" id="val${i}">${positions[i]}</span>°</label>
+    <input type="range" min="0" max="90" value="${positions[i]}" id="s${i}" 
+      oninput="manualMove(${i},this.value)">
+    <button class="hook-btn" onclick="regresarAnterior(${i})">↺</button>
   `;
   slidersDiv.appendChild(cont);
-
-  const pb=document.createElement('button');
-  pb.className='btn secondary';
-  pb.textContent=fingerNames[i];
-  pb.onclick=()=>restorePrev(i);
-  prevButtons.appendChild(pb);
 }
 
-/* Slider */
-function onSlide(i,val){
-  previous[i]=positions[i];
-  positions[i]=parseFloat(val);
-  document.getElementById('val'+i).textContent=val+'°';
-  fetch(`${ip}/servo?finger=${i}&value=${val}`).catch(()=>{});
+function manualMove(idx,val){
+  val=parseInt(val);
+  positions[idx]=val;
+  document.getElementById('val'+idx).textContent=val;
+  fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-/* Ajuste fino */
-function adjust(i,dir){
-  let val = positions[i]+dir;
-  if(val<0) val=0; if(val>90) val=90;
-  document.getElementById('s'+i).value=val;
-  onSlide(i,val);
+function setAll(angle){
+  for(let i=0;i<5;i++){
+    moveToAngle(i,angle);
+  }
 }
 
-/* Restaurar anterior */
-function restorePrev(i){
-  const temp=positions[i];
-  positions[i]=previous[i];
-  previous[i]=temp;
-  document.getElementById('s'+i).value=positions[i];
-  onSlide(i,positions[i]);
+function regresarAnterior(idx){
+  moveToAngle(idx,lastSaved[idx]);
 }
 
-/* Pausa */
-function pauseAll(){ paused=!paused; alert(paused?"Movimiento pausado":"Reanudado"); }
-
-/* Movimiento gradual */
-function gradualMove(targets){
-  const step=3;
-  const interval=setInterval(()=>{
-    let done=true;
-    for(let i=0;i<5;i++){
-      if(moving[i]) continue;
-      let cur=positions[i];
-      let tgt=targets[i];
-      if(paused) return;
-      if(Math.abs(cur-tgt)>0.5){
-        done=false;
-        previous[i]=cur;
-        if(cur<tgt) cur=Math.min(cur+step,tgt);
-        else cur=Math.max(cur-step,tgt);
-        positions[i]=cur;
-        document.getElementById('s'+i).value=cur;
-        document.getElementById('val'+i).textContent=Math.round(cur)+'°';
-        fetch(`${ip}/servo?finger=${i}&value=${cur}`).catch(()=>{});
-      }
+// movimiento gradual en pasos de 3°
+function moveToAngle(idx,target){
+  lastSaved[idx]=positions[idx]; // guardamos valor anterior
+  let current = positions[idx];
+  let step = target>current?3:-3;
+  let interval = setInterval(()=>{
+    current += step;
+    if((step>0 && current>=target) || (step<0 && current<=target)){
+      current=target;
+      clearInterval(interval);
     }
-    if(done) clearInterval(interval);
-  },2000);
+    positions[idx]=current;
+    document.getElementById('s'+idx).value=current;
+    document.getElementById('val'+idx).textContent=current;
+    fetch(`/servo?finger=${idx}&value=${current}`).catch(()=>{});
+  },100); // 100ms = 0.1s entre pasos -> suaviza el movimiento
 }
 
-/* Abrir/Cerrar */
-function openHand(){ gradualMove([90,90,90,90,90]); }
-function closeHand(){ gradualMove([0,0,0,0,0]); }
-
-/* Voz */
+// ===== Comando de voz =====
 function startVoice(){
-  if(!('webkitSpeechRecognition'in window)){ alert("Tu navegador no soporta voz"); return; }
-  const rec=new webkitSpeechRecognition();
-  rec.lang='es-ES'; rec.start();
-  rec.onresult=(e)=>{
-    const cmd=e.results[0][0].transcript.toLowerCase();
-    console.log("Comando:",cmd);
-    if(cmd.includes("abrir mano")) openHand();
-    else if(cmd.includes("cerrar mano")) closeHand();
-    else if(cmd.includes("pausa")) pauseAll();
+  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+  recognition.lang = 'es-ES';
+  recognition.start();
+  recognition.onresult=function(event){
+    let text=event.results[0][0].transcript.toLowerCase().trim();
+    document.getElementById('commandBox').textContent='Comando detectado: '+text;
+
+    // ABRIR MANO / CERRAR MANO
+    if(text.includes('abrir mano')) setAll(90);
+    else if(text.includes('cerrar mano')) setAll(0);
+
+    // Dedo específico: "meñique a 45"
     else{
       for(let i=0;i<5;i++){
-        const name=fingerNames[i].toLowerCase();
-        if(cmd.includes(name)){
-          const num=parseInt(cmd.match(/\d+/));
-          if(!isNaN(num)&&num>=0&&num<=90){
-            let targets=[...positions];
-            targets[i]=num;
-            gradualMove(targets);
-          }
+        let name=fingerNames[i].toLowerCase();
+        if(text.includes(name) && text.match(/\d+/)){
+          let val = parseInt(text.match(/\d+/)[0]);
+          val=Math.min(Math.max(0,val),90);
+          moveToAngle(i,val);
         }
       }
     }
   };
-  rec.onerror=()=>alert("Error en reconocimiento");
+  recognition.onerror=function(e){ console.log('Error reconocimiento',e); };
 }
 </script>
+
 </body>
 </html>
