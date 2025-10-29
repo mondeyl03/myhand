@@ -35,10 +35,6 @@ input[type=range] { width: 55%; height: 18px; }
 <div id="commandBox"></div>
 
 <script>
-// ====== CONFIG ======
-const ESP32_IP = '172.19.123.247'; // <--- IP del ESP32 (maestro), recibe los comandos y envía al Arduino esclavo
-// ====================
-
 const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions = [90,90,90,90,90];
 let lastSaved = [90,90,90,90,90];
@@ -59,18 +55,16 @@ for(let i=0;i<5;i++){
   slidersDiv.appendChild(cont);
 }
 
-// ===== FUNCIONES =====
-
-// Manual inmediato
+// Manual inmediato (sin retraso)
 function manualMove(idx,val){
   val=parseInt(val);
   positions[idx]=val;
   document.getElementById('val'+idx).textContent=val;
   document.getElementById('s'+idx).value=val;
-  fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
+  fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-// Flechas 1° movimiento
+// Flechas 1° de movimiento manual inmediato
 function stepFinger(idx,direction){
   let target = positions[idx] + direction;
   target = Math.max(0,Math.min(90,target));
@@ -88,12 +82,12 @@ function startAll(angle){
   for(let i=0;i<5;i++) moveToAngle(i,angle);
 }
 
-// Regresar al valor anterior
+// Regresar al anterior valor guardado
 function regresarAnterior(idx){
   moveToAngle(idx,lastSaved[idx]);
 }
 
-// Movimiento gradual
+// Movimiento gradual 3° cada 2s hasta target
 function moveToAngle(idx,target){
   pauseFinger(idx);
   lastSaved[idx]=positions[idx]; 
@@ -110,7 +104,7 @@ function moveToAngle(idx,target){
     positions[idx]=current;
     document.getElementById('s'+idx).value=current;
     document.getElementById('val'+idx).textContent=current;
-    fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${current}`).catch(()=>{});
+    fetch(`/servo?finger=${idx}&value=${current}`).catch(()=>{});
   },2000);
 }
 
@@ -123,6 +117,7 @@ function startVoice(){
     let text=event.results[0][0].transcript.toLowerCase().trim();
     document.getElementById('commandBox').textContent='Comando detectado: '+text;
 
+    // Pausar un dedo por voz
     if(text.includes('pausar')){
       for(let i=0;i<5;i++){
         let name=fingerNames[i].toLowerCase();
