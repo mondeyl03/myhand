@@ -35,15 +35,15 @@ input[type=range] { width: 55%; height: 18px; }
 <div id="commandBox"></div>
 
 <script>
+const ESP32_IP = "172.19.123.247"; // Cambia aquí por la IP fija de tu ESP32
+
 const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions = [90,90,90,90,90];
 let lastSaved = [90,90,90,90,90];
 let intervals = [null,null,null,null,null];  
 const slidersDiv = document.getElementById('sliders');
 
-// === IP del ESP32 ===
-const ESP_IP = "192.168.4.10";  // ⚠️ CAMBIA ESTA IP por la de tu ESP32
-
+// Crear sliders y controles
 for(let i=0;i<5;i++){
   const cont = document.createElement('div');
   cont.className = 'finger';
@@ -58,39 +58,39 @@ for(let i=0;i<5;i++){
   slidersDiv.appendChild(cont);
 }
 
-// Manual inmediato (sin retraso)
+// Movimiento inmediato
 function manualMove(idx,val){
   val=parseInt(val);
   positions[idx]=val;
   document.getElementById('val'+idx).textContent=val;
   document.getElementById('s'+idx).value=val;
-  fetch(`${ESP_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
+  fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
-// Flechas 1° de movimiento manual inmediato
+// Flechas de 1°
 function stepFinger(idx,direction){
   let target = positions[idx] + direction;
   target = Math.max(0,Math.min(90,target));
   manualMove(idx,target);
 }
 
-// Pausar un dedo
+// Pausar movimiento
 function pauseFinger(idx){
   if(intervals[idx]) clearInterval(intervals[idx]);
   intervals[idx]=null;
 }
 
-// Abrir/Cerrar Mano todos
+// Abrir/cerrar mano todos
 function startAll(angle){
   for(let i=0;i<5;i++) moveToAngle(i,angle);
 }
 
-// Regresar al anterior valor guardado
+// Regresar a valor anterior
 function regresarAnterior(idx){
   moveToAngle(idx,lastSaved[idx]);
 }
 
-// Movimiento gradual 3° cada 2s hasta target
+// Movimiento gradual (3° cada 2s)
 function moveToAngle(idx,target){
   pauseFinger(idx);
   lastSaved[idx]=positions[idx]; 
@@ -107,11 +107,11 @@ function moveToAngle(idx,target){
     positions[idx]=current;
     document.getElementById('s'+idx).value=current;
     document.getElementById('val'+idx).textContent=current;
-    fetch(`${ESP_IP}/servo?finger=${idx}&value=${current}`).catch(()=>{});
+    fetch(`http://${ESP32_IP}/servo?finger=${idx}&value=${current}`).catch(()=>{});
   },2000);
 }
 
-// ===== Comando de voz =====
+// Reconocimiento de voz
 function startVoice(){
   const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
   recognition.lang='es-ES';
@@ -120,6 +120,7 @@ function startVoice(){
     let text=event.results[0][0].transcript.toLowerCase().trim();
     document.getElementById('commandBox').textContent='Comando detectado: '+text;
 
+    // Pausar dedos por voz
     if(text.includes('pausar')){
       for(let i=0;i<5;i++){
         let name=fingerNames[i].toLowerCase();
@@ -146,4 +147,3 @@ function startVoice(){
 </script>
 </body>
 </html>
-
