@@ -1,40 +1,5 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Exoesqueleto de los Timbritos</title>
-<style>
-body { font-family: Arial, sans-serif; background: #0d1117; color: #e6eef6; text-align: center; margin: 0; padding: 0; }
-h1 { background: #06b6d4; color: #0d1117; padding: 15px; font-size: 2em; margin: 0; }
-.container { margin: 20px auto; max-width: 500px; background: #161b22; padding: 25px; border-radius: 12px; }
-.finger { margin: 20px 0; padding: 10px; border: 2px solid #06b6d4; border-radius: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 1.2em; }
-.finger label { font-weight: bold; display: block; width: 50%; text-align: left; }
-input[type=range] { width: 55%; height: 18px; }
-.value { font-size: 1em; color: #94a3b8; width: 40px; display: inline-block; text-align: right; }
-.btn { margin: 8px; padding: 12px 20px; background: #06b6d4; border: none; color: #0d1117; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1.1em; }
-.btn.secondary { background: transparent; border: 2px solid #06b6d4; color: #06b6d4; }
-.control-buttons { margin-top: 15px; }
-.mic-button { margin: 12px; padding: 15px; background: #facc15; border: none; border-radius: 50%; cursor: pointer; font-weight: bold; font-size: 1.4em; }
-#commandBox { margin-top:15px; font-size: 1.2em; color: #facc15; min-height: 24px; }
-.hook-btn, .step-btn { margin-left: 8px; padding: 6px 10px; font-size: 1em; cursor: pointer; border-radius: 6px; border: 2px solid #06b6d4; background: transparent; color: #06b6d4; }
-</style>
-</head>
-<body>
-
-<h1>Exoesqueleto de los Timbritos</h1>
-
-<div class="container" id="sliders"></div>
-
-<div class="control-buttons">
-  <button class="btn" onclick="startAll(90)">Abrir Mano</button>
-  <button class="btn" onclick="startAll(0)">Cerrar Mano</button>
-</div>
-
-<button class="mic-button" onclick="startVoice()">🎤</button>
-<div id="commandBox"></div>
-
 <script>
+const esp32IP = "http://172.19.123.247"; // ← Cambia esto con la IP real que te da el ESP32
 const fingerNames = ["Meñique","Anular","Corazón","Índice","Pulgar"];
 let positions = [90,90,90,90,90];
 let lastSaved = [90,90,90,90,90];
@@ -61,7 +26,7 @@ function manualMove(idx,val){
   positions[idx]=val;
   document.getElementById('val'+idx).textContent=val;
   document.getElementById('s'+idx).value=val;
-  fetch(`/servo?finger=${idx}&value=${val}`).catch(()=>{});
+  fetch(`${esp32IP}/servo?finger=${idx}&value=${val}`).catch(()=>{});
 }
 
 // Flechas 1° de movimiento manual inmediato
@@ -104,43 +69,7 @@ function moveToAngle(idx,target){
     positions[idx]=current;
     document.getElementById('s'+idx).value=current;
     document.getElementById('val'+idx).textContent=current;
-    fetch(`/servo?finger=${idx}&value=${current}`).catch(()=>{});
+    fetch(`${esp32IP}/servo?finger=${idx}&value=${current}`).catch(()=>{});
   },2000);
 }
 
-// ===== Comando de voz =====
-function startVoice(){
-  const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-  recognition.lang='es-ES';
-  recognition.start();
-  recognition.onresult=function(event){
-    let text=event.results[0][0].transcript.toLowerCase().trim();
-    document.getElementById('commandBox').textContent='Comando detectado: '+text;
-
-    // Pausar un dedo por voz
-    if(text.includes('pausar')){
-      for(let i=0;i<5;i++){
-        let name=fingerNames[i].toLowerCase();
-        if(text.includes(name)) pauseFinger(i);
-      }
-      return;
-    }
-
-    if(text.includes('abrir mano')) startAll(90);
-    else if(text.includes('cerrar mano')) startAll(0);
-    else{
-      for(let i=0;i<5;i++){
-        let name=fingerNames[i].toLowerCase();
-        if(text.includes(name) && text.match(/\d+/)){
-          let val=parseInt(text.match(/\d+/)[0]);
-          val=Math.min(Math.max(0,val),90);
-          moveToAngle(i,val);
-        }
-      }
-    }
-  };
-  recognition.onerror=function(e){ console.log('Error reconocimiento',e); };
-}
-</script>
-</body>
-</html>
